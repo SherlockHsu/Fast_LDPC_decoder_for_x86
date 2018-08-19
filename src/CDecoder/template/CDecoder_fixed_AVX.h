@@ -18,7 +18,7 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifdef __AVX2__
+// #ifdef __AVX2__
 #ifndef __CDecoder_fixed_AVX__
 #define __CDecoder_fixed_AVX__
 
@@ -46,4 +46,4 @@ public:
 };
 
 #endif
-#endif
+// #endif
