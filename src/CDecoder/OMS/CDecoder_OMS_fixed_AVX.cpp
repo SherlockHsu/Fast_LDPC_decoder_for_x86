@@ -185,11 +185,11 @@ bool CDecoder_OMS_fixed_AVX::decode_8bits(char Intrinsic_fix[], char Rprime_fix[
     
 //    unsigned int arret;
 
-    while (nombre_iterations--) {
-        TYPE *p_msg1r                       = var_mesgs;
-        TYPE *p_msg1w                       = var_mesgs;
+    while (nombre_iterations--) {                           // main loop
+        TYPE *p_msg1r                       = var_mesgs;    // read pointer to msg
+        TYPE *p_msg1w                       = var_mesgs;    // write pointer to msg
 #if PETIT == 1
-        __m256i **p_indice_nod1 = p_vn_adr;
+        __m256i **p_indice_nod1 = p_vn_adr;                 // pointer to vn adr matrix
         __m256i **p_indice_nod2 = p_vn_adr;
 #else
         const unsigned short *p_indice_nod1 = PosNoeudsVariable;
@@ -197,54 +197,55 @@ bool CDecoder_OMS_fixed_AVX::decode_8bits(char Intrinsic_fix[], char Rprime_fix[
 #endif
 //        arret = 0;
 
-        const TYPE min_var = VECTOR_SET1( vSAT_NEG_VAR );
-        const TYPE max_msg = VECTOR_SET1( vSAT_POS_MSG );
+        const TYPE min_var = VECTOR_SET1( vSAT_NEG_VAR );   // set min En -(2^7-1)
+        const TYPE max_msg = VECTOR_SET1( vSAT_POS_MSG );   // set max check msg (2^5-1)
 
-        for (int i=0; i<DEG_1_COMPUTATIONS; i++){
+        for (int i=0; i<DEG_1_COMPUTATIONS; i++){           // check msg update loop1
 //IACA_START
             
-            TYPE tab_vContr[DEG_1];
+            TYPE tab_vContr[DEG_1];                         // variable msg buff
             TYPE sign = VECTOR_ZERO;
-            TYPE min1 = VECTOR_SET1(vSAT_POS_VAR);
-            TYPE min2 = min1;
+            TYPE min1 = VECTOR_SET1(vSAT_POS_VAR);          // min
+            TYPE min2 = min1;                               // submin
 
 #if (DEG_1 & 0x01) == 1
-        const unsigned char sign8   = 0x80;
-        const unsigned char isign8  = 0xC0;
+        const unsigned char sign8   = 0x80;                 // 1000 0000 B
+        const unsigned char isign8  = 0xC0;                 // 1100 0000 B
         const TYPE msign8        = VECTOR_SET1( sign8   );
         const TYPE misign8       = VECTOR_SET1( isign8  );
 #else
-        const unsigned char sign8   = 0x80;
-        const unsigned char isign8b = 0x40;
+        const unsigned char sign8   = 0x80;                 // 1000 0000 B
+        const unsigned char isign8b = 0x40;                 // 0100 0000 B
         const TYPE msign8        = VECTOR_SET1( sign8   );
         const TYPE misign8b      = VECTOR_SET1( isign8b );
 #endif
         
 #if PETIT == 1
 #if MANUAL_PREFETCH == 1        
-    _mm_prefetch((const char*)(p_indice_nod1[DEG_1]), _MM_HINT_T0);
-    _mm_prefetch((const char*)(&p_msg1r[DEG_1]), _MM_HINT_T0);
+    _mm_prefetch((const char*)(p_indice_nod1[DEG_1]), _MM_HINT_T0); // prefetch En
+    _mm_prefetch((const char*)(&p_msg1r[DEG_1]), _MM_HINT_T0);      // prefetch check msg
 #endif
 #endif
             #pragma unroll(DEG_1)
-            for(int j=0 ; j<DEG_1 ; j++){
+            for(int j=0 ; j<DEG_1 ; j++){   // subloop1
 #if PETIT == 1
-                TYPE vNoeud    = VECTOR_LOAD( *p_indice_nod1 );
+                TYPE vNoeud    = VECTOR_LOAD( *p_indice_nod1 );             // load En
 #else
                 TYPE vNoeud    = VECTOR_LOAD(&var_nodes[(*p_indice_nod1)]);
 #endif
-                TYPE vMessg    = VECTOR_LOAD(p_msg1r);
-                TYPE vContr    = VECTOR_SUB_AND_SATURATE_VAR_8bits(vNoeud, vMessg, min_var);
-                TYPE cSign     = VECTOR_GET_SIGN_BIT(vContr, msign8);
-                sign           = VECTOR_XOR(sign, cSign);
-                TYPE vAbs      = VECTOR_MIN( VECTOR_ABS(vContr), max_msg );
-                tab_vContr[j]  = vContr;
-                TYPE vTemp     = min1;
+                TYPE vMessg    = VECTOR_LOAD(p_msg1r);                      // load check msg
+                TYPE vContr    = VECTOR_SUB_AND_SATURATE_VAR_8bits(vNoeud, vMessg, min_var);    // get variable msg
+                TYPE cSign     = VECTOR_GET_SIGN_BIT(vContr, msign8);       // get sign
+                sign           = VECTOR_XOR(sign, cSign);                   // count sign
+                TYPE vAbs      = VECTOR_MIN( VECTOR_ABS(vContr), max_msg ); // get abs msg for comparing
+                tab_vContr[j]  = vContr;                                    // store variable msg
+                TYPE vTemp     = min1;                                      // get min and submin
                 min1           = VECTOR_MIN_1(vAbs, min1);
                 min2           = VECTOR_MIN_2(vAbs, vTemp, min2);
-                p_indice_nod1 += 1;
+                p_indice_nod1 += 1;                                         // next
                 p_msg1r       += 1;
             }
+            /* get min and submin with offset */
             TYPE cste_1   = VECTOR_MIN( VECTOR_SBU(min2, VECTOR_SET1(offset)), max_msg); // ON SATURE DIREECTEMENT AU FORMAT MSG
             TYPE cste_2   = VECTOR_MIN( VECTOR_SBU(min1, VECTOR_SET1(offset)), max_msg); // ON SATURE DIREECTEMENT AU FORMAT MSG
 
@@ -258,31 +259,32 @@ bool CDecoder_OMS_fixed_AVX::decode_8bits(char Intrinsic_fix[], char Rprime_fix[
 #endif
             
 #if (DEG_1 & 0x01) == 1
-            sign = VECTOR_XOR(sign, misign8);
+            sign = VECTOR_XOR(sign, misign8);   // xor 1100 0000 B
 #else
-            sign = VECTOR_XOR(sign, misign8b);
+            sign = VECTOR_XOR(sign, misign8b);  // xor 0100 0000 B
 #endif
 
             #pragma unroll(DEG_1)
-            for(int j=0 ; j<DEG_1 ; j++) {
-                    TYPE vContr = tab_vContr[j];
-                    TYPE vAbs   = VECTOR_MIN( VECTOR_ABS(vContr), max_msg );
-                    TYPE vRes   = VECTOR_CMOV   (vAbs, min1, cste_1, cste_2);
-                    TYPE vSig   = VECTOR_XOR    (sign, VECTOR_GET_SIGN_BIT(vContr, msign8));
-                    TYPE v2St   = VECTOR_invSIGN2(vRes, vSig);
-                    TYPE v2Sr   = VECTOR_ADD_AND_SATURATE_VAR_8bits(vContr, v2St, min_var);
-                    VECTOR_STORE( p_msg1w,                      v2St);
+            for(int j=0 ; j<DEG_1 ; j++) {      // subloop 2
+                    TYPE vContr = tab_vContr[j];                                // get variable msg
+                    TYPE vAbs   = VECTOR_MIN( VECTOR_ABS(vContr), max_msg );    // get abs check msg
+                    TYPE vRes   = VECTOR_CMOV   (vAbs, min1, cste_1, cste_2);   // if vAbs == min1, set cste_1
+                                                                                // else, set cste_2
+                    TYPE vSig   = VECTOR_XOR    (sign, VECTOR_GET_SIGN_BIT(vContr, msign8));    // get sign
+                    TYPE v2St   = VECTOR_invSIGN2(vRes, vSig);                                  // get new check msg
+                    TYPE v2Sr   = VECTOR_ADD_AND_SATURATE_VAR_8bits(vContr, v2St, min_var);     // get new En
+                    VECTOR_STORE( p_msg1w,                      v2St);          // store check msg
 #if PETIT == 1
-                    VECTOR_STORE( *p_indice_nod2, v2Sr);
+                    VECTOR_STORE( *p_indice_nod2, v2Sr);                        // store Eb
 #else
                     VECTOR_STORE( &var_nodes[(*p_indice_nod2)], v2Sr);
 #endif
-                    p_msg1w        += 1;
+                    p_msg1w        += 1;    // next
                     p_indice_nod2  += 1;
             }
 #if PETIT == 1
 #if MANUAL_PREFETCH == 1        
-    _mm_prefetch((const char*)(*p_indice_nod2), _MM_HINT_T0);
+    _mm_prefetch((const char*)(*p_indice_nod2), _MM_HINT_T0);   // prefetch vn address
 #endif
 #endif
 //IACA_END
@@ -291,7 +293,7 @@ bool CDecoder_OMS_fixed_AVX::decode_8bits(char Intrinsic_fix[], char Rprime_fix[
 
 //////////////////////////
 #if NB_DEGRES >= 2
-        for (int i=0; i<DEG_2_COMPUTATIONS; i++){
+        for (int i=0; i<DEG_2_COMPUTATIONS; i++){   // check msg update loop2
 
 #if (DEG_2 & 0x01) == 1
         const unsigned char sign8   = 0x80;
@@ -377,7 +379,7 @@ bool CDecoder_OMS_fixed_AVX::decode_8bits(char Intrinsic_fix[], char Rprime_fix[
         char* ptr = (char*)var_nodes;
         for (int i=0; i<NOEUD; i+=1){
             for (int j=0; j<32; j+=1){
-                Rprime_fix[j*NOEUD +i] = (ptr[32*i+j] > 0);
+                Rprime_fix[j*NOEUD +i] = (ptr[32*i+j] > 0);     // decition
             }
         }
     }
